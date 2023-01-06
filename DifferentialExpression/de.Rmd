@@ -1,0 +1,9 @@
+---
+author: Shreya
+output:
+  md_document:
+    variant: gfm
+---
+
+```{R, code=readLines("de.R"), echo=TRUE, eval=TRUE}
+```
