@@ -7,14 +7,16 @@ library(DESeq2)
 tx2gene <- read.csv("tx2gene.csv")
 head(tx2gene)
 
+# setting the file path
 samples <- read.csv("/scratch/SampleDataFiles/Samples.csv", header=TRUE)
 head(samples)
 
+# importing the counts with tximport
 files <- file.path("quant", samples$Sample, "quant.sf")
 txi <- tximport(files, type="salmon", tx2gene=tx2gene)
-
 dds <- DESeqDataSetFromTximport(txi, colData = samples, design = ~ Menthol + Vibrio)
 
+# performing DESeq
 dds$Vibrio <- relevel(dds$Vibrio, ref = "Control")
 dds$Menthol <- relevel(dds$Menthol, ref = "Control")
 keep <- rowSums(counts(dds)) >= 10
