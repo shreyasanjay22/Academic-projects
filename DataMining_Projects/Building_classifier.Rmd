@@ -1,0 +1,294 @@
+---
+title: "Building k-nearest neighbour classifier"
+output:
+  html_document:
+    df_print: paged
+---
+ 
+Building a k-nearest neighbor classifier to predict the onset of diabetes using the
+Pima Indians Diabetes Database. 
+Load the diabetes dataset “diabetes.csv”, view the dimensions of the data, and gather
+summary statistics.   \
+```{r}
+#install.packages("class")
+library(class)
+library(dplyr)
+library(class)
+#install.packages("caret")
+library(caret)
+#install.packages("e1071")
+library(e1071)
+
+```
+The dimensions of the data are 789 rows(Observations) and 9 Columns (variables). From the summary Statistics we can see that the Variables have different minimum and maximums i.r the variables would work better for knn if they are normalized. The Outcome variables is the target variable which has two levels 0 and 1. The age range for the data is anywhere between 21 to 81. In the next problem I will normalise as knn depends on distance and such a fluctuation in the range of data can hinder the results
+```{r}
+# Loading data in R
+pima <- read.csv("scorce_path")
+head(pima)
+
+# Checking the dimensions
+dim(pima)
+# Gathering the summary statistics
+summary(pima)
+```
+Normalize the explanatory variables using min-max normalization.  \
+From the Summary statistics it can be seen that all the variables have a minimum of 0 and maixmum of 1 after normalizing. 
+```{r}
+# Normalizing the data using min-max in the for loop to apply on all variables
+for(i in (1:ncol(pima)))
+{
+  pima[,i] <- (pima[,i] - min(pima[,i]))/ (max(pima[,i] - min(pima[,i])))
+}
+# Summary of the data
+summary(pima)
+head(pima)
+```
+Split the data into a training set and a test set i.e. perform an 80/20 split; 80% training data and 20% test data. 
+```{r}
+# Obtaining the 80% rows of the dataset
+n <- floor(0.80*nrow(pima))
+# Setting seed to obtain same results throughout
+set.seed(123)
+# Obtaning the rows of data to be considered for the 80% train dataset
+index <-  sample(seq_len(nrow(pima)),size = n)
+
+# Extracting the 80% data from the dataset as training
+train <- pima[index, ]
+
+# Extracting 20% rows from the dataset as test
+test <- pima[-index, ]
+print(paste("Number of rows in training data",nrow(train)))
+print(paste("Number of rows in test data",nrow(test)))
+```
+Using the two datasets from (3) above, separate the explanatory variables from the response
+variable and assign them to new variables — i.e create variables called train.data and
+train.data.labels which contain the training data and its labels respectively; and create test.data and
+test.data.labels which contain the test data and its labels respectively.
+**The purpose of this step is to ensure that you provide the correct data to the knn() function in
+question 1.5. It is optional to use this naming convention; however, ensure that you separate the
+response variable (i.e. Outcome) from your explanatory variables when providing the parameters to
+knn() below.  \
+```{r}
+# Removing the response variable from the remaining dataset to obtain train.data
+train.data <- train %>% select(-Outcome)
+head(train.data)
+# Extracting the labels from train
+train.data.labels <- train$Outcome
+head(train.data.labels)
+
+# Removing the response variable from the remaining dataset to obtain test.data
+test.data <- test %>% select(-Outcome)
+head(test.data)
+# Extracting the labels from test
+test.data.labels <- test$Outcome
+head(test.data.labels)
+
+
+```
+5. Train the model:
+Use the knn() function from the class library, and provide the following as input: the
+training set, the test set; the labels for the training data and the value of k (use the square root of
+the number of observations). For example knn(train= train.data, test= test.data, cl=
+train.data.labels, k=value).   \
+From the summary we can see that the the model has wrongly determined 14 values of Outcome 1 as 0.
+```{r}
+# storing the square root of train data for k value
+value <- sqrt(nrow(train))
+
+# Using the knn() function to build a model for the data
+model <- knn(train = train.data, test = test.data, cl = as.factor(train.data.labels) , k = value)
+
+# Summary of the model
+summary(model)
+summary(as.factor(test$Outcome))
+
+```
+Evaluate the predictions using a confusion matrix, to determine how accurate the model
+predicted the labels. Explain the results. Note: see reference in the ‘Useful Resources’ section for
+more information on building a confusion matrix in R.   \
+From the confusuion matrix we can see that there 90 True Positives, 26 True Negatives, 26 False Positives and 12 False negatives. O is taken as the positive class in the confusion matrix. The Accuracy of the model is 75.32% and the kappa score is .41 which is a moderate class.
+```{r}
+
+confusionMatrix(model, as.factor(test.data.labels))
+
+```
+Repeat step 5: perform an experiment to find the best value of k. Ensure that you use at least 5 different values of k and display the results i.e. the corresponding model and its output. Which model produced the best results? 
+I checked for the error between the model and the data for various k values and plotted a graph which gives the least error rate. I used the link below as a reference to this approach.
+link :https://daviddalpiaz.github.io/r4sl/knn-class.html
+```{r}
+# Creating a function to obatin the error
+err <- function(model, test.data.labels) 
+  {
+  sum(model != test.data.labels)
+}
+
+
+k = 10:50
+# Initializing a vector to store the error rates
+err_k <- rep(x = 0, times = length(k))
+set.seed(1234)
+# Looping through various k values and building model and testing the error rates
+for (i in seq_along(k)) {
+  predicted <- knn(train = train.data, 
+             test  = test.data, 
+             cl    = train.data.labels, 
+             k     = k[i])
+  err_k[i] = err(predicted,test.data.labels)
+}
+
+err_k
+```
+
+
+```{r}
+# plot error vs choice of k
+plot(err_k, type = "b", col = "black", 
+     xlab = "k values", ylab = "classification error",
+     main = "Error Rate vs Neighbors")
+# line of min error
+abline(h = min(err_k), col = "blue", lty = 3)
+#abline(h = mean(test.data.labels == "Yes"), col = "red", lty = 2)
+```
+From the plot we can see that the k value of 20 gives the lowest error. The blue line indicates the minimum error in the data
+```{r}
+which(err_k == min(err_k))
+
+```
+Building models of knn for various k values with least errors from the plot. From the confusion matrix we can see that the model with k value of 30 gives best accuracy. From the confusion matrix we can see that as the k value increases the accuracy increases. with highest accuracy k=30
+```{r}
+set.seed(1234)
+knn.9 <- knn(train = train.data, test = test.data, cl = as.factor(train.data.labels) , k = 9)
+knn.15 <- knn(train = train.data, test = test.data, cl = as.factor(train.data.labels) , k = 15)
+knn.23 <- knn(train = train.data, test = test.data, cl = as.factor(train.data.labels) , k = 23)
+knn.20 <- knn(train = train.data, test = test.data, cl = as.factor(train.data.labels) , k = 20)
+knn.30 <- knn(train = train.data, test = test.data, cl = as.factor(train.data.labels) , k = 30)
+
+confusionMatrix(knn.9, as.factor(test.data.labels))
+confusionMatrix(knn.15, as.factor(test.data.labels))
+confusionMatrix(knn.23, as.factor(test.data.labels))
+confusionMatrix(knn.20, as.factor(test.data.labels))
+confusionMatrix(knn.30, as.factor(test.data.labels))
+
+```
+
+Building a k-nearest neighbor classifier to predict BMI based on gender, height and weight.
+Load the Body Mass Index (BMI) dataset “500_Person_Gender_Height_Weight_Index.csv”.
+Inspect the explanatory variables and create dummy codes for the categorical variable(s) and
+normalize the numeric variables using min-max normalization. 
+```{r}
+#load data in R
+bmi <- read.csv("C:\\Users\\sshirodkar\\Downloads\\34879_46976_bundle_archive\\500_Person_Gender_Height_Weight_Index.csv")
+bmi
+```
+```{r}
+# dummy coding the categorical variables
+bmi$Gender <- ifelse(bmi$Gender == "Male", 0, 1 )
+
+# min-max normalization
+for(i in (1:(ncol(bmi)-1)))
+{
+  bmi[,i] <- (bmi[,i] - min(bmi[,i]))/ (max(bmi[,i] - min(bmi[,i])))
+}
+summary(bmi)
+head(bmi)
+
+```
+
+Split the data into a training set and a test set i.e. perform an 80/20 split; 80% training data and 20% test data. 
+
+```{r}
+# splitting the data 80% train and 20% test. -same steps as in question 1
+n <- floor(0.80*nrow(bmi))
+set.seed(123)
+index <-  sample(seq_len(nrow(bmi)),size = n)
+
+train <- bmi[index, ]
+test <- bmi[-index, ]
+nrow(train)
+nrow(test)
+
+```
+
+Separate the explanatory variables from the response variable and assign them to new
+variables (similar to Q1.4 above). 
+```{r}
+# separating labels from the exploratory data- steps in question 1 
+train.data <- train %>% select(-Index)
+head(train.data)
+train.data.labels <- train$Index
+head(train.data.labels)
+
+test.data <- test %>% select(-Index)
+head(test.data)
+test.data.labels <- test$Index
+head(test.data.labels)
+
+```
+Build the k-NN model using the variables in (3) and evaluate the predictions — experiment
+with different values of k to identify the best model.  \
+The accuracy of the model is 80% which shows a good model. The kappa score is .70 which shows good class.
+```{r}
+# Taking Square root of train as k value
+k1 <- sqrt(nrow(train.data))
+k1
+model1 <- knn(train = train.data, test = test.data, cl = as.factor(train.data.labels) , k = value)
+
+confusionMatrix(model1, as.factor(test.data.labels))
+
+```
+From the confusuion matrix we can see that the highest accuracy is obtained for k-value of 15. 
+```{r}
+set.seed(1234)
+knn.15 <- knn(train = train.data, test = test.data, cl = as.factor(train.data.labels) , k = 15)
+knn.23 <- knn(train = train.data, test = test.data, cl = as.factor(train.data.labels) , k = 23)
+knn.25 <- knn(train = train.data, test = test.data, cl = as.factor(train.data.labels) , k = 25)
+knn.32 <- knn(train = train.data, test = test.data, cl = as.factor(train.data.labels) , k = 32)
+knn.40 <- knn(train = train.data, test = test.data, cl = as.factor(train.data.labels) , k = 40)
+
+confusionMatrix(knn.15, as.factor(test.data.labels))
+confusionMatrix(knn.23, as.factor(test.data.labels))
+confusionMatrix(knn.25, as.factor(test.data.labels))
+confusionMatrix(knn.32, as.factor(test.data.labels))
+confusionMatrix(knn.40, as.factor(test.data.labels))
+
+```
+Create a data frame with at least 5 new observations (i.e. comprising the gender, weight and
+height) that you will use to test your model. Predict the body mass index i.e Index for the sample data
+and comment on the predictions (did they align with your expectations?).   \
+The output aligns with my expectations: we can see that the index value of first observation is 5 which is extreme obesity which this could be beacuse of the short height of the male in first observation. The 2nd and 4th observations are female with large heights and low weight which makes them index -1 that is weak and the 3rd and 5th observations are index- 4 which is obese male.
+```{r}
+
+# setting values for the new data
+Gender <- c("Male","Female","Male","Female","Male")
+Height <- c(114,180,197,183,199)
+Weight <- c(140,97,170,100,167)
+df1 <- data.frame(Gender,Height,Weight)
+df1$Gender <-  ifelse(df1$Gender == "Male", 1, 0)
+
+# min-max normalization
+for(i in (1:(ncol(df1))))
+{
+  df1[,i] <- (df1[,i] - min(df1[,i]))/ (max(df1[,i] - min(df1[,i])))
+}
+
+#building the model
+model2 <- knn(train = train.data, test = df1, cl = as.factor(train.data.labels) , k = 20)
+model2
+
+
+```
+Stateyour recommendation regarding the best use of the BMI dataset i.e. is it more suitable for
+classification or regression and justify your response.   \
+The BMI Index prediction is more suited for the Classification model as the output expected is levels i.e 0 - Extremely Weak
+
+1 - Weak  \
+
+2 - Normal  \
+
+3 - Overweight  \
+
+4 - Obesity  \
+
+5 - Extreme Obesity  \
+The output of BMI Index was in the form of integers and some results of the model were beyond the levels provided in the dataset. Whereas the Classification model provides output in the form of labels and gives more accurate output for the same.
+

@@ -1,0 +1,237 @@
+---
+title: "Extracting Data from MongoDB"
+output:
+  html_document:
+    df_print: paged
+---
+### By - Shreya Shirodkar
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(mongolite)
+library(httr)
+library(dplyr)
+library(ggplot2)
+library(base)
+```
+Open R studio, connect to your mongoDB instance and create a database called Connecticut
+and a collection called drug_overdose
+```{r, que1-1}
+
+# Storing the connection string
+mongo_url <- "mongodb+srv://user:password-cluster.eqsxa.mongodb.net/Connecticut?retryWrites=true&w=majority"
+
+# connecting to the mongoDB instance and creating db= Connecticut and collection = drug_overdose and storing in connect.
+connect <- mongo(collection = "drug_overdose", db = "Connecticut", url = mongo_url, verbose = TRUE)
+```
+Use the insert function from the mongolite package to insert the data into the collection
+directly from the URL
+```{r, que1-2}
+# Obtaining the URL of the dataset
+x <- GET("https://data.ct.gov/api/views/rybz-nyjw/rows.csv")
+
+# Using insert function to insert the data into the collection directly
+connect$drop()
+connect$insert(content(x))
+
+```
+
+```{r, que1-3}
+# USing the function distinct to obtain unique IDs from the collection (distinct records)
+dis_rec <- length(connect$distinct("ID"))
+
+print(paste("The number of distinct record in the collection:", dis_rec))
+
+```
+Calculate the number of deaths in the deathcounty. Sort the results in descending order based
+on the total and limit your results to the top 5 counties. Display the results using a suitable chart
+(using ggplot).   
+
+Explanation: The Top 5 counties with most number of deaths are Hartford, New Haven, Fairfield, New london and Litchfield. Hartford has the highest number of deaths- 1233 deaths from the years 2012-2018.
+```{r, que1-4}
+
+# Using aggregate function to group the data by DeathCOunty, using count on the group followed by sorting the results in descending order and displaying the top 5 counties.
+x <- connect$aggregate('[{ "$match": { "DeathCounty": {"$exists": true, "$ne": null}}}, 
+                       {"$group":{"_id":"$DeathCounty", "Count": {"$sum":1}}},
+                       {"$sort":{"Count":-1}},
+                       {"$limit":5}]')
+x
+
+# Plot of DeathCounty and Count 
+x %>% ggplot(aes(x=reorder(`_id`,Count),y=Count))+
+geom_col(color='skyblue',fill='red') + geom_text(aes(label = Count), color = "blue", hjust = -0.13, size = 3) +coord_flip()+xlab("County Name") + ylab("Death Count") + labs(title = "Death Count per County : Top 5", subtitle = "Plot of County and its death count", caption = "TOp 5 County with most drug availablility & deaths, as a result of these drugs ")
+```
+Select the county with the highest deaths (from #4 above) and perform the following:  \
+Show the ratio of male to female deaths  \
+
+Explanation: From the table, Male= 918 and female = 313. I have used standard R code to obatin the ratio which is equal to 2.93
+```{r, que2-5a}
+
+# Using aggregate to filter the rows of DeathCOunty- Hartford, grouping the data by sex and obtaining the count by group.
+mal_fem <- connect$aggregate('[{ "$match": { "DeathCounty": {"$exists": true, "$ne": null}}}, 
+                            { "$match": { "DeathCounty": "HARTFORD" }}, 
+                            {"$group": {"_id":"$Sex", "Count" : {"$sum":1}}},
+                            {"$match": {"_id": {"$in": ["Male","Female"]}}},
+                            {"$sort":{"Count":-1}}
+                            ]')
+mal_fem
+
+# calculating the ratio of male to female deaths
+ratio <- mal_fem$Count[1]/mal_fem$Count[2]
+
+print(paste("The ratio of male to female deaths in Hartford:", ratio))
+  
+```
+Calculate the total Fentanyl-related cause of death (use the cod field, hint: use string matching or
+regular expressions).  \
+
+Explanation: From the output we can see that the total fentanyl related cause of death = 589.
+```{r, que2-5b}
+
+# filtering the data of the County- Hartford and regular exprassion to obatin death related to Fentanyl from COD.
+fentanyl <- (connect$aggregate('[{ "$match": { "DeathCounty": "HARTFORD" }}, 
+                               {"$match" : { "COD" : { "$regex" : "Fentanyl", "$options" : "i" } } }]'))
+
+head(fentanyl)
+
+print(paste("Total Fentanyl-related cause of death",nrow(fentanyl)))
+
+```
+Analyze the ages (and you can use age groups), is this issue prevalent within certain age
+groups  \
+
+Explanation: From the age group analysis we can see that as the age increases the death count also increases. The lowest death count is for the addicts of age 0-20 and the count increases as the age group increases with highest count for the age group 41-50. We can also see that there is a sudden dr0p in death count for the age over 61.
+```{r, que2-6}
+
+# USing aggregate to make groups of ages, counting the total based on groups and sorting in descending.
+age_analysis <- connect$aggregate('[
+                  { "$group": {"_id": {"$cond":[{ "$lte":["$Age",20] },"age_grp_0_20",
+                  { "$cond":[{ "$lte":["$Age",30] }, "age_grp_21_30",
+                  { "$cond":[{ "$lte":["$Age",40] }, "age_grp_31_40",
+                  { "$cond":[{ "$lte":["$Age",50] }, "age_grp_41_50",
+                  { "$cond":[{ "$lte":["$Age",60] }, "age_grp_51_60",
+                  "age_grp_above_61"]}]}]}]}
+                  ]},
+                  "count":{ "$sum": 1 }}},
+                  {"$sort":{"count":-1}}
+                  ]')
+
+age_analysis
+
+# Plot of age group and count
+ggplot() + 
+  geom_col(data = age_analysis, aes(x = `_id`, y = count), fill = "red") +
+  xlab("Age (years)") +
+  ylab("Death count (people)") + labs(title = "Age group Analysis of accidental death associated with drug-overdose ", subtitle = "Plot of Age group and death count", caption = "Analyzing the ages groups to check if issue prevalent within certain age")
+```
+Calculate the total monthly cases of heroin, cocaine, and fentanyl in 2018 and display the
+results using a line chart (using ggplot). Explain the results.   \
+
+Explanation: From the plot below we can see that, the cases of death by Fentanyl is greater than that of heroin and cocaine. The red line represents Fentanyl. It falls within the range 41-73 deaths. The range of totalt cases by month for cocaine is 18-38. The blank line on the graph represent cocaine. It shows a slow increase in the cases till June followed by a steady decrease in cases.The blue line represents Heroin.  The monthly cases lie within the range 27- 41. The line shows increase in case till september.
+```{r}
+
+# Calculating the monthly cases of Heroin
+# Using regular expression to match the year followed by modifying the date column to get the month, obtaining the cases of heroin, grouping by month to get the total count
+
+a<- connect$aggregate('[{"$match":{"Date" : { "$regex" : "2018", "$options" : "i" }}}, {"$project":  {"Heroin" : 1 , "month" : {"$substr" : ["$Date", 0,2]}}}, {"$match": {"Heroin": "Y"}}, {"$group":{"_id":"$month", "Count": {"$sum":1}}}]')
+
+# Calculating the monthly cases of Fentanyl
+b<- connect$aggregate('[{"$match":{"Date" : { "$regex" : "2018", "$options" : "i" }}}, {"$project":  {"Fentanyl" : 1 , "month" : {"$substr" : ["$Date", 0,2]}}}, {"$match": {"Fentanyl": "Y"}}, {"$group":{"_id":"$month", "Count": {"$sum":1}}}]')
+
+# Calculating the monthly cases of Cocaine 
+c<- connect$aggregate('[{"$match":{"Date" : { "$regex" : "2018", "$options" : "i" }}}, {"$project":  {"Cocaine" : 1 , "month" : {"$substr" : ["$Date", 0,2]}}}, {"$match": {"Cocaine": "Y"}}, {"$group":{"_id":"$month", "Count": {"$sum":1}}}]')
+
+a[,1] <- as.numeric(a[,1])
+b[,1] <- as.numeric(b[,1])
+c[,1]<- as.numeric(c[,1])
+ 
+a
+b
+c
+
+p = ggplot() + 
+  geom_line(data = a, aes(x = `_id`, y = Count), color = "blue") +
+  geom_line(data = b, aes(x = `_id`, y = Count), color = "red") +
+  geom_line(data = c, aes(x = `_id`, y = Count), color = "black") + 
+  xlab("Month") +
+  ylab("Monthly cases of heroin,cocain and fentanyl (people") + labs(title = "Monthly cases of Heroin,Fentanyl and Cocaine for the year 2018 ", subtitle = "Blue= Heroin, Red= Fentanyl, Black = Cocaine", caption = "To check the trend of the 3 drugs for each month of 2018 ")
+p
+
+```
+
+1. Build one additional query (of your choice) to retrieve data from MongoDB into a data frame. Prepare
+supporting visualizations and explain your analysis. You can use/reference supporting data where
+necessary. 
+
+*Analysis of Cause of Death by Fentanyl of White Male and Female from year 2012-2018*  \
+Explanation: From the plot below we can see that the cases for both male and female have a steady increase till 2015 and then a sudden increase in the death count till the year 2018. We can also see that the cases of white female have are in the range of 6 to 126 increasing by year. The cases of white male are in the range of 4 to 434 increasing realy.
+
+```{r}
+
+# Analysis of Cause of Death by Fentanyl of White  Female from year 2012-2018
+# Using aggreagate to find the results. $match is used to find white female. I have used regular expression to find the Fentanyl from COD. $project is used modify date column to get years and then grouped the cases by year and obtained the total count.
+a<- (connect$aggregate('[{ "$match": { "Sex": "Female" }},
+                       { "$match": { "Race": "White" }},{"$match" : { "COD" : { "$regex" : "Fentanyl", "$options" : "i" } }},    {"$project":  {"COD" : 1, "year" : {"$substr" : ["$Date", 6,5]}}}, 
+                       {"$group":{"_id":"$year", "Count": {"$sum":1}}} ]'))
+print("Analysis of Cause of Death by Fentanyl of White Female from year 2012-2018")
+a
+
+
+# Analysis of Cause of Death by Fentanyl of White Male from year 2012-2018
+b <- (connect$aggregate('[{ "$match": { "Sex": "Male" }},{ "$match": { "Race": "White" }},{"$match" : { "COD" : { "$regex" : "Fentanyl", "$options" : "i" } }}, {"$project":  {"COD" : 1, "year" : {"$substr" : ["$Date", 6,5]}}}, {"$group":{"_id":"$year", "Count": {"$sum":1}}} ]'))
+print("Analysis of Cause of Death by Fentanyl of White Male from year 2012-2018")
+b
+
+# Coverting character to numeric
+a[,1] <- as.numeric(a[,1])
+b[,1] <- as.numeric(b[,1])
+
+# Plot of year and death count
+p = ggplot() + 
+  geom_line(data = a, aes(x = `_id`, y = Count), color = "Red") +
+  geom_line(data = b, aes(x = `_id`, y = Count), color = "blue") +
+  xlab("Year") +
+  ylab("Count of Death (people)") + labs(title = "Trend of COD by Fentanyl of White Male and Female from year 2012-2018", subtitle = "Blue= Male, Red= Female", caption = " The plot shows the trend between the white female and male death cases by Fentanyl per year ")
+p
+
+
+```
+
+*Yearly trend of Death cases by Heroin, Fentanyl and Cocaine* 
+Explanation: From the plot below we can see that the cases for Heroin, Fentanyl and Cocaine have a steady increase in the death count while Fentanyl has a sudden rise in death count from 2015.
+```{r}
+
+# Calculating Death cases by Cocaine from year 2012-2018
+# Using aggregate to calculate the yearly death cases by first modifying the date column to years, obtaining the cases of cocaine, grouping by years and calculating the count.
+a<- connect$aggregate('[ {"$project":  {"Cocaine" : 1, "year" : {"$substr" : ["$Date", 6,5]}}}, {"$match": {"Cocaine": "Y"}}, {"$group":{"_id":"$year", "Count": {"$sum":1}}}, {"$sort":{"Count":-1}}]')
+a
+
+# Calculating Death cases by Heroin from year 2012-2018
+b<- connect$aggregate('[ {"$project":  {"Heroin" : 1, "year" : {"$substr" : ["$Date", 6,5]}}}, {"$match": {"Heroin": "Y"}}, {"$group":{"_id":"$year", "Count": {"$sum":1}}}, {"$sort":{"Count":-1}}]')
+b
+
+# Calculating Death cases by Fentanyl from year 2012-2018
+c<- connect$aggregate('[ {"$project":  {"Fentanyl" : 1, "year" : {"$substr" : ["$Date", 6,5]}}}, {"$match": {"Fentanyl": "Y"}}, {"$group":{"_id":"$year", "Count": {"$sum":1}}}, {"$sort":{"Count":-1}}]')
+c
+
+# Converting character to numeric
+a[,1] <- as.numeric(a[,1])
+b[,1] <- as.numeric(b[,1])
+c[,1]<- as.numeric(c[,1])
+ 
+# Plot of Years and Count 
+p = ggplot() + 
+  geom_line(data = a, aes(x = `_id`, y = Count), color = "blue") +
+  geom_line(data = b, aes(x = `_id`, y = Count), color = "red") +
+  geom_line(data = c, aes(x = `_id`, y = Count), color = "black") +
+  xlab("Year") +
+  ylab("Yearly cases of heroin, cocain and fentanyl (people") + labs(title = "yearly cases of Heroin,Fentanyl and Cocaine", subtitle = "Blue= Cocaine, Red= Heroin, Black = Fentanyl", caption = "To check the trend of the 3 drugs for each year ")
+p
+
+```
+
+
+
+
+

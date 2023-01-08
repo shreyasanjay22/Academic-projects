@@ -1,0 +1,471 @@
+---
+title: "distribution of COVID-19 cases worldwide"
+output:
+  html_document:
+    df_print: paged
+---
+## By - Shreya Sanjay Shirodkar
+
+### Working on a dataset on the geographic distribution of COVID-19 cases worldwide that was obtained from the European Centre for Disease Prevention and Control (ECDC). The data provides the daily number of new cases for each country (NOTE: it is not the cumulative number of cases).  \
+Download the COVID-19 case distribution (in XML formal): https://opendata.ecdc.europa.eu/covid19/casedistribution/xml/. Load the XML file into a browser or text editing tool and inspect it.
+Explore the data set as you see fit and get a sense of the data. Note that you are working with a live
+dataset that is updated daily. Therefore it is best to ensure that your results are data driven.   \
+Downloading the file in XML format and exploring the data.
+```{r}
+library(XML)
+#url <- "https://opendata.ecdc.europa.eu/covid19/casedistribution/xml/"
+
+#xmlToDataFrame("url.xml")
+
+
+
+```
+Load the data into R (directly from the URL) and create two linked tibbles: one for country and the other for covid_19_data that contains each country’s reported case. The country tibble should contain the following: countriesAndTerritories, countryterritoryCode (primary key), popData2018, continentExp. The covid_19_data tibble should contain: id (auto incremented value that will serve as
+the primary key), countryterritoryCode(foreign key), dateRep, cases, deaths. You can link/join both tibbles by using the countryterritoryCode. 
+Explanation: I have loaaded the data directly in R using htmlparse() function followed by checking the root node. I converted the data to Dataframe.   \
+I found that some of the country codes are missing and used the countrycode package to add those country codes in place of missing codes.
+Reference:https://stackoverflow.com/questions/23430547/htmlparse-fails-to-load-external-entity
+```{r}
+# Loading the libraries in R
+library("XML")
+library(httr)
+library(dplyr)
+library(tidyverse)
+library(countrycode)
+# Storing the URL of the source in url
+url <- "https://opendata.ecdc.europa.eu/covid19/casedistribution/xml/"
+# Parsing the data in URL
+doc <- htmlParse(rawToChar(GET(url)$content))
+# Obtaining the root of the parsed data
+root <- xmlRoot(doc)
+
+# Loading the xml data in data frame using the root 
+data<- xmlToDataFrame(nodes = xmlChildren(xmlRoot(doc)[["body"]][["records"]]))
+head(data)
+print("Rows of orignal data set")
+nrow(data)
+## Tidying the original data set 
+
+# filtering the rows with missing country codes
+missing_code <- data %>% filter(countryterritorycode == "") 
+print("Rows with missing country codes")
+missing_code
+
+# storing the country names of the rows with missing country codes in y
+y <- missing_code$countriesandterritories
+# Using countrycode library to obtain the country codes of missing code
+codes<- countryname(y, destination = 'iso3c')
+
+# adding the country codes back to the missing_code data frame 
+missing_code$countryterritorycode <- codes
+print("DIsplaying the rows after adding the codes")
+missing_code
+
+# binding the rows of missing_code to the original data set
+data <- rbind(missing_code,data)
+head(data)
+
+# Storing the blank observations as NA in the original data frame
+data[data==""] <- NA
+
+# Dropping the rows with NA in country territory variable 
+data <- data %>% drop_na(countryterritorycode)
+nrow(data)
+
+
+```
+Explanation: Next I created the first tibble with the details of the country and kept only the distinct columns from the original data set to avoid duplicates. I checked the count of the primary key (countryterritorycode). I checked for missing values and found 5 countries with missing popdata2018. I used the references below to obtain the population of those countries.  \
+References for Population data 2018  \
+https://www.worldometers.info/world-population/anguilla-population/
+https://www.worldometers.info/world-population/western-sahara-population/
+https://www.worldometers.info/world-population/falkland-islands-malvinas-population/
+https://www.worldometers.info/world-population/caribbean-netherlands-population/
+https://www.worldometers.info/world-population/eritrea-population/
+https://en.wikipedia.org/wiki/Caribbean_Netherlands
+```{r}
+library(dplyr)
+library(tidyverse)
+#install.packages("countrycode")
+
+# Making the tibble country with the variables specified in the question
+country<- data%>% select(countriesandterritories,countryterritorycode, popdata2018,continentexp ) %>% distinct
+country <- as_tibble(country )
+head(country)
+
+# Checking the count of primary key countryterritorycode
+country %>% 
+  count(countryterritorycode) %>% 
+  filter(n > 1)
+
+# Checking the NA in country data set
+print("Count of missing values in each Variable")
+colSums(is.na(country))
+
+# Filtering the rows with missing popdata2018
+pop_missing<- country %>% filter(is.na(popdata2018))
+print("Rows with missing variable popdata2018")
+pop_missing
+
+# Vector of populations of the country with missing popdata2018
+pop <- c(14731,25711,3234,567407, 3452786)
+
+# Adding the popdata2018 to the pop_missing data frame
+pop_missing$popdata2018 <- pop
+print("Rows after adding popdata2018:")
+pop_missing
+
+# binding the pop_missing data to  country data frame
+country <- rbind(pop_missing,country)
+head(country)
+
+# dropping NA from the country data frame
+country<- country %>% drop_na(popdata2018)
+
+```
+Explanation: The following steps are followed to create the covid_19_data tibble. I have used rowid_to_column() function to add ID(primary key) to the tibble. Finally I joined the two tibbles to get a tidy tibble of the data. I used left_join and connected using the countryterritorycode. I rearranged the columns of the data for covinience.
+```{r}
+library(dplyr)
+# Creating a tibble with data specified in the question
+covid_19_data <- data %>% select(countryterritorycode,daterep,cases, deaths)
+covid_19_data<- as_tibble(covid_19_data)
+# Adding ID column to the data set
+covid_19_data<- tibble::rowid_to_column(covid_19_data, "ID")
+covid_19_data
+
+
+# Checking the count of foreign keys
+covid_19_data %>% 
+  count(ID) %>% 
+  filter(n > 1)
+
+# Joining the data to obtain a tidy data of covid cases
+data_covid <- left_join(country,covid_19_data,  by ="countryterritorycode")
+# Rearranging the variables
+data_covid <- data_covid %>% select(ID,countriesandterritories,countryterritorycode,continentexp,daterep,cases,deaths,popdata2018)
+head(data_covid)
+
+
+#Checkng the missing values
+colSums(is.na(data_covid))
+
+```
+Explanation: Formatting the data, Changing the datatype, dealing with the outliers and getting rid of the initial zero cases of all countries.
+```{r}
+# Changing the data types of the variables
+data_covid$cases <- as.numeric(as.character(data_covid$cases))
+data_covid$deaths <- as.numeric(as.character(data_covid$deaths))
+data_covid$popdata2018 <- as.numeric(as.character(data_covid$popdata2018))
+
+
+# Checking th outliers in cases i.e the negative case values
+cases_negative<- data_covid %>% filter(cases<0)
+cases_negative
+# Deleting the rows with negative case values
+data_covid <- data_covid[-cases_negative$ID, ]
+# Coverting the negative cases to positive 
+cases_negative$cases <- -(cases_negative$cases)
+# Joining the positive coverted cases back tot he data_covid data frame (I'm assuming that the negative sign is an error)
+data_covid <- rbind(cases_negative,data_covid)
+
+# Similar steps for death cases
+death_negative <- data_covid %>% filter(deaths <0)
+death_negative
+data_covid <- data_covid[-death_negative$ID, ]
+death_negative$cases <- -(death_negative$cases)
+data_covid <- rbind(death_negative,data_covid)
+nrow(data_covid)
+
+# getting rid of the first zero cases untill a non-zero number for each country
+data_covid<- data_covid %>% mutate(date_formatted =format(as.POSIXct(data_covid$daterep,format='%d/%m/%Y'),format='%m/%d/%Y')) %>% arrange(date_formatted)%>% group_by(countriesandterritories) %>% mutate(first_match = min(row_number()[cases != 0])) %>% filter(row_number() >= first_match) %>% select(-first_match) %>% ungroup()
+
+data_covid %>% filter(countriesandterritories == "India")
+
+```
+Create a function called worldwideCases() that displays: a) the total cases worldwide, b) the
+number of new cases within the past day (grouped by continent).   \
+Explanation: Created worldwiseCases() function which returns the total cases worlwide till the present date and also the number of new cases in each continent in the past day. The steps followed to get the outputs are mentioned as comments
+```{r}
+#install.packages("lubridate")
+data1 <- data_covid
+
+#loading data in R
+library(dplyr)
+library(lubridate)
+# Creating function to dispplay total cases worlwide and number of new cases within the past day
+worldwideCases <- function(x)
+{
+  #
+  #x$cases <- as.numeric(as.character(x$cases))
+  # Total cases of covid
+  total_cases <- sum(x$cases)
+  # Obtaining the present date
+  step1 <- today()
+  # Obtaining the past day date
+  step2 <- step1 -1
+  # Using mutate to format the date year-month-day format to match the date in step 2
+  x <- x %>% mutate(date_formatted =format(as.POSIXct(x$daterep,format='%d/%m/%Y'),format='%Y-%m-%d'))
+  # filtering the date that match the step2 and grouping by continent to obtain the new cases within the past day
+  new_cases <- x %>% filter(date_formatted == step2) %>% group_by(continentexp) %>% summarise(new_cases = sum(cases))
+  # coverting to list to add in return
+  results <- list("the total cases worldwide"= total_cases, "number of new cases within the past day" = new_cases)
+  return(results)
+}
+
+# Giving the data frame as the argument to the function
+worldwideCases(data1)
+
+```
+Create visualizations that show the progression of the cases and the mortality rate in each
+continent.   \
+Explanation: From the plots we can see different mortality rates and the cases in those continents. For example, Europe had it's highest number of cases (~885510) in the month of April and the highest mortatlity rate of 0.46 after which both the mortality rate and cases reduced. America had the highest cases (941520) in the month of may and the mortality rate (.27 after which even though there are is reduction in cases but mortatlity rate remains constant. Patterns of other continents can also be observed in the graph. Europe has the highest mortality rate till today and United states has the highest cases.  \
+Progression of cases: The graph traces the months of January to June which shows the progression of Covid-19 cases, categorized by continents. It can be inferred that the continents of America and Europe have shown steep rise in cases from the month of march and have attained the peaks in the month of MAy and April respectively, showing downward trend thereafter. Whereas the continents of Africa and Asia have a gradual rise in cases without any considerable peak count in cases.
+
+Progression of Mortality Rate: The graph traces the months of January to June which shows the progression of mortality rates of continents.The graphs are pretty steady, indicating minimal progression in mortality rates, except for the continent of Europe and Africa. Europe shows a very exponential rise in mortality rate from February to March, where it reaches its peak value and decreases thereafter. The African continent shows a pretty small hike in the mortality rate in the month of may.
+References:  \
+https://www.cdc.gov/csels/dsepd/ss1978/lesson3/section3.html
+https://www-doh.state.nj.us/doh-shad/view/sharedstatic/CauseSpecificDeathRate.pdf
+https://www.globalhealthlearning.org/taxonomy/term/1583
+https://www.open.edu/openlearn/health-sports-psychology/health/epidemiology-introduction/content-section-2.1.1
+```{r, warning = FALSE}
+
+
+
+# Created a variable month to obttain the mortality rate progression by month. 
+data2<- data_covid  %>% mutate(month =(format(as.POSIXct(data_covid$daterep,format='%d/%m/%Y'),format='%m'))) %>%
+  # Created a varible called date_formatted which formats the date to %m/%d/Y
+  mutate(date_formatted = (format(as.POSIXct(data_covid$daterep,format='%d/%m/%Y'),format='%Y/%m/%d/'))) %>% 
+  # Arranged the dates
+  arrange(date_formatted) %>% 
+  # Grouped the data by month and continent to obtain the sum of deaths, cases of each continent by month
+  group_by(month,continentexp) %>% 
+  # Obtaining the total cases, total, deaths by month and population of each continent
+  summarise(death = sum(deaths), case = sum(cases),population = sum(popdata2018)) %>%
+  # Creating a variable with mortality rate
+  mutate(mortality_rate = (death/population)*100000)%>% filter(month != 12)
+data2
+
+library(ggplot2)
+# Line plot of month and case (First Layer)
+ggplot(data2) + geom_line(aes(x=month, y= case, color = continentexp, group = continentexp)) + labs( x= "Month", y= "Mortality Rate Per 100000 cases") +  labs(title = "Line plot of month and cases",caption = "The graph shows the progression of cases in each continent", x= "Month", y= "Cases of Covid (people)") 
+# Line plot of month and mortality rate
+ggplot(data2) + geom_line(aes(x=month, y= mortality_rate, color = continentexp, group = continentexp)) + ylim(0,0.5)+ labs(title = "Line plot of month and mortality rate", x= "Month", y= "Mortality Rate Per 100000 cases",caption = "The graph shows the progression of mortality rate in each continent" ) 
+
+# Bar graph of the month and cases
+a<- ggplot(data2) + geom_col(aes(x=month, y= case, group = 1)) +facet_wrap(data2$continentexp)  + theme(axis.text.x = element_text(angle = 90, size = 5, color = "red")) + labs(title = "Progression of cases and mortality rate",caption = "This Graph shows the progression of cases and mortality rate in each continent", x= "Month", y= "Cases of Covid (people)") 
+# Plot of month and mortality_rate
+b <-ggplot(data2) + geom_line(aes(x=month, y= mortality_rate, color = continentexp, group = continentexp)) + ylim(0,0.5)+ labs( x= "Month", y= "Mortality Rate Per 100000 cases") 
+
+
+# Plot of progression of cases and mortality_
+ggplot(data = data2) + geom_bar(aes(x=month, y = case, group = continentexp,fill = continentexp),stat ="identity")+ labs(title ="Graph-cases and mortality rate", caption ="This graph shows the progression of cases and mortality rate in each continent", y= "Cases(people)")+ geom_line(aes(x=month, y =mortality_rate*3300000, group = continentexp)) + facet_wrap(data2$continentexp)+ scale_y_continuous(sec.axis = sec_axis(~./3300000, name = "mortatlity rate per 100000 cases"), 
+    limits = c(0,1600000))+theme_bw() + 
+  theme(
+    panel.grid.major = element_blank(), 
+    panel.grid.minor = element_blank()
+  )
+
+```
+Display the ten countries with the highest number of cases. Analyze the data and indicate the
+date of the first reported case and the ratio of cases-to-fatalities for each country (use supporting
+visualizations).   \
+Explanation: From the case_to_fatality rate we can see that Russia has the lowest rate of 1.3% and Italy has the highest rate of 14.4%. The first reported dates are in the month/date/year format.We can also visualise this information of case_to_fatality with the first graph. The second graph represents the top 10 countries with highest cases. United States of America stands First with the total cases of 2048986 as of 13th June   \
+Note: The first reported case are in month/date/year format
+Reference:  \
+https://www.britannica.com/science/case-fatality-rate
+```{r, warning=FALSE}
+library(tidyverse)
+library(dplyr)
+
+# Grouping the data by countries and summarising with sum() will give the total of cases of each country followed by arranging the countries in descending order and using slice to obtain the top 10 countries with highest cases of Covid
+top_10<- data_covid %>% group_by(countriesandterritories) %>% summarise(total=sum(cases)) %>% arrange(desc(total)) %>% slice(1:10)
+print("Ten countries with highest number of cases")
+top_10
+
+
+# Using left_join() to join the top 10 countries with thier respsective data from data_covid.
+top_10_old<- left_join(top_10,data_covid,by ="countriesandterritories")
+
+
+
+top_10new<- top_10_old %>%
+  # Using mutate to change the format of dates to arrange the dates
+  mutate(date_formatted =format(as.POSIXct(top_10_old$daterep,format='%d/%m/%Y'),format='%m/%d/%Y')) %>%
+# sorting the dates in ascending  
+  arrange(date_formatted) %>%
+  # filtering out the dates with zero cases
+  filter(cases != 0) %>%
+  # grouping by countries and using summarise to obtain the first(daterep of each country), getting the sum of cases and death to find the case to fatility ratio
+  group_by(countriesandterritories) %>% summarise(first_case =  first(date_formatted), total_cases = sum(cases), total_deaths = sum(deaths)) %>% mutate(case_to_fatility= (total_deaths/total_cases)*100) 
+print("Data indicating the date of the first reported case and the ratio of cases-to-fatalities for each country")
+top_10new
+
+
+# Plot of progression of  total_case to case_to_fatality of top 10 countries
+library(ggplot2)
+ top_10new %>% ggplot(mapping = aes(x= total_cases, y= case_to_fatility
+, color = countriesandterritories
+)) + geom_point() + labs(title = "Plot of total cases and case_to_fatality",caption = "This Graph show the progression of cases and case_to _fatality ", x = "total cases (people)", y="Case to fatality rate(Percentage") 
+
+# Plot of the top 10 countries and total cases
+top_10 %>% ggplot(mapping = aes(x=countriesandterritories, y=total, fill= countriesandterritories))+ geom_bar(stat="identity")+ labs(title = "Top 10 countries and the total cases",caption = "This graph displays the top 10 countries with highest cases", x= "country", y = "total cases(people)" ) + theme(axis.text.x = element_text(angle = 90, size = 7, color = "black"))
+ 
+# Plot of cases vs death
+top_10_old %>%ggplot(mapping = aes(x=cases, y= deaths, color = countriesandterritories
+)) + geom_point(size = 0.5) + ylim(0,2500) + facet_wrap(top_10_old$countriesandterritories) + labs(title = "Plot of cases and deaths",caption = "This plot displays the cases and deaths in the top 10 countries with highest cases", x= "cases(people)", y = "death(people)" ) + theme(axis.text.x = element_text(angle = 90, size = 7, color = "black"))
+
+# Plot of first reported case and countries
+top_10new %>% arrange(first_case) %>% ggplot(mapping = aes(x=countriesandterritories, y=first_case, fill= countriesandterritories))+ geom_bar(stat="identity")+ labs(title = "Dates of first reported cases and countries",caption = "Displays the dates of first reported cases in the top 10 countries with highest cases of covid-19", x= "Country", y = "First cases(dates in %m/%d/%Y)" ) + theme(axis.text.x = element_text(angle = 90, size = 7, color = "black"))
+
+```
+
+Use the mutate verb in dplyr to calculate the cumulative cases and deaths for each country.
+The new fields should be named cumulative_cases and cumulative_deaths respectively.   \
+Explanation: Created a variable called date_formatted to format dates in month-date-year to arrange in scending order. Group the data by countries. Using cumsum() to obtain the cumulative cases and death for each country.  \
+I have filtered out the country India just to show the example output and cumulative cases and deaths
+
+```{r}
+# Using mutate to add a variable called data_formatted which formats the date as %m%d%y to arrange in ascending order. Group the data by countries. Using cumsum() to obtain the cumulative cases and death for each country. 
+df <- data_covid %>% mutate(date_formatted =format(as.POSIXct(data_covid$daterep,format='%d/%m/%Y'),format='%m/%d/%Y')) %>% arrange(date_formatted)%>% group_by(countriesandterritories) %>% mutate(cumulative_cases = cumsum(cases),  cumulative_deaths = cumsum(deaths)) %>% arrange(countriesandterritories)
+head(df)
+
+# Filtering the country India to check the output variables cumulative cases and death of a country (Example)
+df %>% filter(countriesandterritories == "India") %>% select(countriesandterritories, cases,deaths,cumulative_cases,cumulative_deaths)
+```
+
+Create a function called, casesByCountry(), that takes a user defined date and country code as
+its arguments and displays the distribution of cases for the selected country, leading up to the chosen
+date. Annotate the chart to show the highest number of cases that were reported; this should
+correspond with the daily reported case and not the cumulative cases. The chart should also contain a
+subtitle that indicates the population for the selected country.
+Note: if a date is not specified, make the current date the default. If a country is not specified, display
+a message to the user. 
+Explanation: I have explained the steps in the comments.  \
+I have taken the country Aruba to display the output. In the first example with date and countrycode, The maximum case in Aruba is 9 till the specified date. In the second example, The maximum case is annotated as 22 till current date and the distribution shows increase and then decrease in cases. In the third example with missing country code, the message is displayed.
+
+```{r}
+library(ggplot2)
+
+
+# Creating the function
+casesByCountry <- function(x,y)
+{
+  # using missing() to check if the date argument is missing
+if(missing(x))
+  {
+  # Using the current date in the argumet is missing 
+    date<-  Sys.Date() 
+    # Formatting the date
+    date<- format(y, format = "%m/%d/%Y")
+    
+}
+  else{
+    # Using the date provided in the argument when date is given
+date <- x
+# formatting the date
+date <- format(as.Date(date,format="%d/%m/%y"),format='%m/%d/%Y')
+  }
+  # Checking if the country code argument is missing
+  if(missing(y))
+  {
+    # displaying the message when the argument country code is missing
+    message <- "Country Code missing: Please enter a country code to obtain the  distribution of cases of the country"
+    return(message)
+  }
+  else
+  {
+ # filtering the data of the country in argument, arranging the date and filtering all the dates upto the date in the argument
+for_plot <- data_covid %>% mutate(date_formatted =format(as.POSIXct(data_covid$daterep,format='%d/%m/%Y'),format='%m/%d/%Y'))%>% filter(countryterritorycode == y)  %>% arrange(date_formatted) %>%  filter(date_formatted <= date)
+# filtering the highest number of case reported in the data
+max_cases<- for_plot %>% filter(cases == max(cases))
+#Removing all the columns with zero cases till the first non-zero case
+# Using mutate to obtain the row with first non-zero case and filter all rows from non-zero cases, removing the column created with mutate
+for_plot <-for_plot %>% mutate(first_match = min(row_number()[cases != 0])) %>% filter(row_number() >= first_match) %>% select(-first_match) %>% ungroup()
+
+# barPlot of dates and cases. annotated with the highest cases
+a <- ggplot(data = for_plot, mapping = aes(x =date_formatted, y = cases, fill = countryterritorycode )) + geom_bar(stat = "identity") + annotate("text", x= max_cases$date_formatted, y =max_cases$cases, label = paste("max =",max_cases$cases),color="blue",  fontface="italic" ) +theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+# Adding label, subtitle = population of the country and adujusting the size and font of the texts
+graph<- a + labs(title = paste("Distribution of cases in",for_plot$countriesandterritories), subtitle = paste("population= ",for_plot$popdata2018[1]),caption = "Data source:  European Centre for Disease Prevention and Control (ECDC)") + theme(axis.text=element_text(size=12), axis.title=element_text(size=14,face="bold")) + theme(axis.text.x = element_text(angle = 90, size = 5, color = "blue"))
+result <- list(for_plot, graph)
+return(result)
+}
+}
+
+#  passing arguments
+date <- "28/03/2020"
+countrycode <- "ABW"
+casesByCountry(date,countrycode)
+
+# Passing the argument with missing date
+casesByCountry(,countrycode)
+
+# Passing arguments with missing countrycode
+casesByCountry(date,)
+
+
+```
+
+Select a country, of your choice, and use the casesByCountry() function to show the progression of the total COVID-19 cases to-date. Analyze the chart and the supporting data; indicate the total number of cases that were reported and the date of the first reported case. What is the current trend?  • Based on your analysis for this country, what are the potential impact on countries like Andorra and San Marino. Create visualizations to support your analysis and/or add other supporting dataset(s) if necessary.   \
+Explanation: For this problem, I selected the country Kenya from The continent of Africa and I Checked the distribution of the cases. From the distribution we can see that the cases are gradually increasing till the present date. The first reported date was on 14/03/2020 and the total number of cases till 13th june is 3305.
+```{r}
+# Selecting the country Kenya
+countrycode <- "KEN"
+
+# Passing the argument country code in the function without date to obatin all cases till date
+case_KEN<- casesByCountry( ,countrycode)
+case_KEN
+
+# Converting the data of the country to data frame
+case_KEN1<- as.data.frame(case_KEN[1])
+# Obtaining the totall cases that were reported using summarise(sum())
+total_cases <- case_KEN1%>% summarise(total_cases = sum(cases)) 
+total_cases
+
+# Obtaining the first reported case
+first_case<- case_KEN1  %>%
+  arrange(date_formatted) %>%
+  filter(cases != 0) %>% summarise(first_reported_case =  first(daterep))
+first_case
+
+
+
+```
+Next I checked the distribution of cases in Andorra and San_marino, For Andorra the first case was reported on 03/03/2020 and we can see that there is an increase in the distribution till 03/04/2020 followed by gradually reducing number of cases with a sudden increase on date 03/06/2020. San_marino also shows similar pattern in which the first reported case was on 28/02/2020 followed by increase and then decrease in the number of patterns. To obtain a pattern, I checked the distribution in the neighbouring countries Spain (neighbouring Andorra) and Italy(neighbouring San_marino) and found similar pattern in their cases i.e an increase in the cases to a certain point and then decrease in the cases. This shows the similarity in the pattern in the neighbouring countries. 
+```{r}
+# Checking the distribution of cases in Andorra
+countrycode <- "AND"
+case_AND<- casesByCountry( ,countrycode)
+case_AND
+
+# Checking the distribution of cases in San_marino
+countrycode <- "SMR"
+casesByCountry( ,countrycode)
+
+# Checking some other distribution of cases in Europe (neighbouring countries of Andorra and San_marino)
+# Spain
+countrycode <- "ESP"
+case_ESP<- casesByCountry( ,countrycode)
+case_ESP1 <- as.data.frame(case_ESP[1])
+case_ESP
+# France
+countrycode <- "ITA"
+case_FRA<- casesByCountry( ,countrycode)
+case_FRA
+
+```
+To explore furthur, I checked the distributions of the continent in which the countries are present- Europe(Andorra and San_marino) and Africa(Kenya- selected country) and I observed a very interesting pattern in the distribution of cases i.e the most of the countries in a particular continent show similar pattern of covid case distribution. Most of the countries in Europe show the pattern of gradual increase and deacrease whereas the countries in Africa show increase in the cases till date. 
+From my observation I conclude that the continents are responsible for a pattern and kenya does not show similar pattern as that of San_marino and Andorra as they are in different continent. 1 possiblilty in the similarity in tha pattern is if kenya is lagging in the pattern and will show reduced cases once the peak of cases is achieved. But this may depend on various factors. As of now in this studies I conclude with my understanding that is the continents show similar patterns.
+```{r}
+# Checking the patterns of Africa  
+data_covid <- data_covid %>% mutate(date_formatted =format(as.POSIXct(data_covid$daterep,format='%d/%m/%Y'),format='%m/%d/%Y')) %>% arrange(date_formatted)
+data_covid
+
+a<-data_covid %>% filter(continentexp == "Europe") 
+ ggplot(data = a, mapping = aes(x =date_formatted, y = cases, fill = countryterritorycode )) + geom_bar(stat = "identity")  +theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + labs(title = "Distribution of cases in Europe" ,caption = "Data source:  European Centre for Disease Prevention and Control (ECDC)") + theme(axis.text=element_text(size=12), axis.title=element_text(size=14,face="bold")) + theme(axis.text.x = element_text(angle = 90, size = 5, color = "blue"))
+ 
+ # Checking the pattern of Africa 
+ a<-data_covid %>% filter(continentexp == "Africa") 
+ ggplot(data = a, mapping = aes(x =date_formatted, y = cases, fill = countryterritorycode )) + geom_bar(stat = "identity")  +theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + labs(title = "Distribution of cases in Africa" ,caption = "Data source:  European Centre for Disease Prevention and Control (ECDC)") + theme(axis.text=element_text(size=12), axis.title=element_text(size=14,face="bold")) + theme(axis.text.x = element_text(angle = 90, size = 5, color = "blue"))
+```
+
+
