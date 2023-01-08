@@ -1,6 +1,7 @@
 *.css linguist-detectable=false
 *.java linguist-detectable=false
 *.py linguist-detectable=true
+*.python linguist-detectable=true
 *.shell linguist-detectable=true
 *.R linguist-detectable=true
 *.rmd linguist-detectable=true  
